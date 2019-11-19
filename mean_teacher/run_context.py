@@ -41,7 +41,7 @@ class TrainLog:
                     val = float(val)
             fixed_col_val_dict[key] = val
         with self._log_lock:
-            self._log[step].update(col_val_dict)
+            self._log[step].update(fixed_col_val_dict)
             if time.time() - self._last_update_time >= self.INCREMENTAL_UPDATE_TIME:
                 self._last_update_time = time.time()
                 self.save()
