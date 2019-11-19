@@ -362,7 +362,7 @@ def train(train_loader, train_loader_len, model, ema_model, actual_ema_model, op
     for i, ((input, ema_input), target) in enumerate(train_loader):
         meters.update('data_time', time.time() - end)
         adjust_learning_rate(optimizer, epoch, i, train_loader_len)
-        meters.update('lr', optimizer.param_groups[0]['lr'])
+        meters.update('lr', float(optimizer.param_groups[0]['lr']))
 
         input_var = input.to(torch_device)
         ema_input_var = ema_input.to(torch_device)
@@ -371,7 +371,7 @@ def train(train_loader, train_loader_len, model, ema_model, actual_ema_model, op
         minibatch_size = len(target_var)
         labeled_minibatch_size = (target_var != NO_LABEL).sum()
         assert labeled_minibatch_size > 0 # remove to get rid of error in cifar100 w aug
-        meters.update('labeled_minibatch_size', labeled_minibatch_size)
+        meters.update('labeled_minibatch_size', int(labeled_minibatch_size))
 
         ema_model_out = ema_model(ema_input_var)
         model_out = model(input_var)
@@ -404,7 +404,7 @@ def train(train_loader, train_loader_len, model, ema_model, actual_ema_model, op
 
         if args.consistency:
             consistency_weight = get_current_consistency_weight(epoch)
-            meters.update('cons_weight', consistency_weight)
+            meters.update('cons_weight', float(consistency_weight))
             consistency_loss = consistency_weight * consistency_criterion(cons_logit, ema_logit) / minibatch_size
             meters.update('cons_loss', float(consistency_loss))
         else:
@@ -473,7 +473,7 @@ def validate(eval_loader, model, log, global_step, epoch, torch_device):
           minibatch_size = len(target_var)
           labeled_minibatch_size = (target_var != NO_LABEL).sum()
           assert labeled_minibatch_size > 0
-          meters.update('labeled_minibatch_size', labeled_minibatch_size)
+          meters.update('labeled_minibatch_size', int(labeled_minibatch_size))
 
           # compute output
           output1, output2 = model(input_var)
