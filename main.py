@@ -416,16 +416,16 @@ def train(train_loader, train_loader_len, model, ema_model, actual_ema_model, op
         meters.update('loss', float(loss))
 
         prec1, prec5 = accuracy(class_logit, target_var, topk=(1, 5))
-        meters.update('top1', prec1[0], labeled_minibatch_size)
-        meters.update('error1', 100. - prec1[0], labeled_minibatch_size)
-        meters.update('top5', prec5[0], labeled_minibatch_size)
-        meters.update('error5', 100. - prec5[0], labeled_minibatch_size)
+        meters.update('top1', float(prec1[0]), labeled_minibatch_size)
+        meters.update('error1', 100. - float(prec1[0]), labeled_minibatch_size)
+        meters.update('top5', float(prec5[0]), labeled_minibatch_size)
+        meters.update('error5', 100. - float(prec5[0]), labeled_minibatch_size)
 
         ema_prec1, ema_prec5 = accuracy(ema_logit, target_var, topk=(1, 5))
-        meters.update('ema_top1', ema_prec1[0], labeled_minibatch_size)
-        meters.update('ema_error1', 100. - ema_prec1[0], labeled_minibatch_size)
-        meters.update('ema_top5', ema_prec5[0], labeled_minibatch_size)
-        meters.update('ema_error5', 100. - ema_prec5[0], labeled_minibatch_size)
+        meters.update('ema_top1', float(ema_prec1[0]), labeled_minibatch_size)
+        meters.update('ema_error1', 100. - float(ema_prec1[0]), labeled_minibatch_size)
+        meters.update('ema_top5', float(ema_prec5[0]), labeled_minibatch_size)
+        meters.update('ema_error5', 100. - float(ema_prec5[0]), labeled_minibatch_size)
 
         # compute gradient and do SGD step
         optimizer.zero_grad()
