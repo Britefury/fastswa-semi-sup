@@ -188,7 +188,7 @@ def update_batchnorm(model, train_loader, train_loader_len, torch_device, verbos
           input_var = input.to(torch_device)
           target_var = target.to(torch_device)
           minibatch_size = len(target_var)
-          labeled_minibatch_size = target_var.data.ne(NO_LABEL).sum()
+          labeled_minibatch_size = (target_var != NO_LABEL).sum()
           assert labeled_minibatch_size > 0 # remove to get rid of error in cifar100 w aug
           model_out = model(input_var)
         
@@ -369,7 +369,7 @@ def train(train_loader, train_loader_len, model, ema_model, actual_ema_model, op
         target_var = target.to(torch_device)
 
         minibatch_size = len(target_var)
-        labeled_minibatch_size = target_var.data.ne(NO_LABEL).sum()
+        labeled_minibatch_size = (target_var != NO_LABEL).sum()
         assert labeled_minibatch_size > 0 # remove to get rid of error in cifar100 w aug
         meters.update('labeled_minibatch_size', labeled_minibatch_size)
 
@@ -391,37 +391,37 @@ def train(train_loader, train_loader_len, model, ema_model, actual_ema_model, op
         if args.logit_distance_cost >= 0:
             class_logit, cons_logit = logit1, logit2
             res_loss = args.logit_distance_cost * residual_logit_criterion(class_logit, cons_logit) / minibatch_size
-            meters.update('res_loss', res_loss.data[0])
+            meters.update('res_loss', float(res_loss))
         else:
             class_logit, cons_logit = logit1, logit1
             res_loss = 0
 
         class_loss = class_criterion(class_logit, target_var) / minibatch_size
-        meters.update('class_loss', class_loss.data[0])
+        meters.update('class_loss', float(class_loss))
 
         ema_class_loss = class_criterion(ema_logit, target_var) / minibatch_size
-        meters.update('ema_class_loss', ema_class_loss.data[0])
+        meters.update('ema_class_loss', float(ema_class_loss))
 
         if args.consistency:
             consistency_weight = get_current_consistency_weight(epoch)
             meters.update('cons_weight', consistency_weight)
             consistency_loss = consistency_weight * consistency_criterion(cons_logit, ema_logit) / minibatch_size
-            meters.update('cons_loss', consistency_loss.data[0])
+            meters.update('cons_loss', float(consistency_loss))
         else:
             consistency_loss = 0
             meters.update('cons_loss', 0)
 
         loss = class_loss + consistency_loss + res_loss
-        assert not (np.isnan(loss.data[0]) or loss.data[0] > 1e6), 'Loss explosion: {}'.format(loss.data[0])
-        meters.update('loss', loss.data[0])
+        assert not (np.isnan(float(loss)) or float(loss) > 1e6), 'Loss explosion: {}'.format(float(loss))
+        meters.update('loss', float(loss))
 
-        prec1, prec5 = accuracy(class_logit.data, target_var.data, topk=(1, 5))
+        prec1, prec5 = accuracy(class_logit, target_var, topk=(1, 5))
         meters.update('top1', prec1[0], labeled_minibatch_size)
         meters.update('error1', 100. - prec1[0], labeled_minibatch_size)
         meters.update('top5', prec5[0], labeled_minibatch_size)
         meters.update('error5', 100. - prec5[0], labeled_minibatch_size)
 
-        ema_prec1, ema_prec5 = accuracy(ema_logit.data, target_var.data, topk=(1, 5))
+        ema_prec1, ema_prec5 = accuracy(ema_logit, target_var, topk=(1, 5))
         meters.update('ema_top1', ema_prec1[0], labeled_minibatch_size)
         meters.update('ema_error1', 100. - ema_prec1[0], labeled_minibatch_size)
         meters.update('ema_top5', ema_prec5[0], labeled_minibatch_size)
@@ -471,7 +471,7 @@ def validate(eval_loader, model, log, global_step, epoch, torch_device):
           target_var = target.to(target)
 
           minibatch_size = len(target_var)
-          labeled_minibatch_size = target_var.data.ne(NO_LABEL).sum()
+          labeled_minibatch_size = (target_var != NO_LABEL).sum()
           assert labeled_minibatch_size > 0
           meters.update('labeled_minibatch_size', labeled_minibatch_size)
 
@@ -481,12 +481,12 @@ def validate(eval_loader, model, log, global_step, epoch, torch_device):
           class_loss = class_criterion(output1, target_var) / minibatch_size
 
           # measure accuracy and record loss
-          prec1, prec5 = accuracy(output1.data, target_var.data, topk=(1, 5))
-          meters.update('class_loss', class_loss.data[0], labeled_minibatch_size)
-          meters.update('top1', prec1[0], labeled_minibatch_size)
-          meters.update('error1', 100.0 - prec1[0], labeled_minibatch_size)
-          meters.update('top5', prec5[0], labeled_minibatch_size)
-          meters.update('error5', 100.0 - prec5[0], labeled_minibatch_size)
+          prec1, prec5 = accuracy(output1, target_var, topk=(1, 5))
+          meters.update('class_loss', float(class_loss), labeled_minibatch_size)
+          meters.update('top1', float(prec1[0]), labeled_minibatch_size)
+          meters.update('error1', 100.0 - float(prec1[0]), labeled_minibatch_size)
+          meters.update('top5', float(prec5[0]), labeled_minibatch_size)
+          meters.update('error5', 100.0 - float(prec5[0]), labeled_minibatch_size)
 
           # measure elapsed time
           meters.update('batch_time', time.time() - end)
