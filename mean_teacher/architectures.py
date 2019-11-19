@@ -287,8 +287,7 @@ class Shake(Function):
     @classmethod
     def backward(cls, ctx, grad_output):
         grad_inp1 = grad_inp2 = grad_training = None
-        gate_size = torch.Size(grad_output.size()[0], *itertools.repeat(1,
-                                                              grad_output.dim() - 1))
+        gate_size = torch.Size([grad_output.size()[0]] + list(*itertools.repeat(1, grad_output.dim() - 1)))
         gate = torch.rand(gate_size, dtype=torch.float, device=grad_output.device)
         if ctx.needs_input_grad[0]:
             grad_inp1 = grad_output * gate
