@@ -11,7 +11,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.backends.cudnn as cudnn
-from torch.autograd import Variable
 from torch.utils.data import DataLoader
 from torch.utils.data.sampler import BatchSampler, SubsetRandomSampler
 import torchvision.datasets
@@ -37,6 +36,8 @@ global_step = 0
 def main(context):
     global global_step
     global best_prec1
+
+    torch_device = torch.device('cuda:0')
 
     checkpoint_path = context.transient_dir
     training_log = context.create_train_log("training")
@@ -129,7 +130,7 @@ def main(context):
       if ( (epoch >= args.epochs) ) and ((epoch - args.epochs) % args.cycle_interval) == 0:
         swa_model_optim.update(model)
         print("SWA Model Updated!")
-        update_batchnorm(swa_model, train_loader, train_loader_len)
+        update_batchnorm(swa_model, train_loader, train_loader_len, torch_device)
         LOG.info("Evaluating the SWA model:")
         swa_prec1 = validate(eval_loader, swa_model, swa_validation_log, global_step, epoch)
       
@@ -139,17 +140,17 @@ def main(context):
           if epoch >= (args.epochs - args.cycle_interval) and (epoch - args.epochs + args.cycle_interval) % fastswa_freq == 0:
             print("Evaluate fast-swa-{} at epoch {}".format(fastswa_freq, epoch))
             fastswa_opt.update(model)
-            update_batchnorm(fastswa_net, train_loader, train_loader_len)
+            update_batchnorm(fastswa_net, train_loader, train_loader_len, torch_device)
             validate(eval_loader, fastswa_net, fastswa_log, global_step, epoch)
       
       # train for one epoch
       start_time = time.time()
       if args.pimodel == 0:
         # for the MT model, use the ema as a teacher
-        train(train_loader, train_loader_len, model, ema_model, ema_model, optimizer, epoch, training_log)
+        train(train_loader, train_loader_len, model, ema_model, ema_model, optimizer, epoch, training_log, torch_device)
       elif args.pimodel > 0:
         # for the pi model, use the model itself as a teacher
-        train(train_loader, train_loader_len, model, model, ema_model, optimizer, epoch, training_log)
+        train(train_loader, train_loader_len, model, model, ema_model, optimizer, epoch, training_log, torch_device)
       LOG.info("--- training epoch in %s seconds ---" % (time.time() - start_time))
 
       if args.evaluation_epochs and (epoch + 1) % args.evaluation_epochs == 0:
@@ -176,19 +177,20 @@ def main(context):
         }, is_best, checkpoint_path, epoch + 1)
 
 
-def update_batchnorm(model, train_loader, train_loader_len, verbose=False):
+def update_batchnorm(model, train_loader, train_loader_len, torch_device, verbose=False):
     if verbose: print("Updating Batchnorm")
     model.train()
     for i, ((input, ema_input), target) in enumerate(train_loader):
         # speeding things up (100 instead of ~800 updates)
         if i > 100: 
           return
-        input_var = torch.autograd.Variable(input, volatile=True)
-        target_var = torch.autograd.Variable(target.cuda(async=True), volatile=True)
-        minibatch_size = len(target_var)
-        labeled_minibatch_size = target_var.data.ne(NO_LABEL).sum()
-        assert labeled_minibatch_size > 0 # remove to get rid of error in cifar100 w aug
-        model_out = model(input_var)
+        with torch.no_grad():
+          input_var = input.to(torch_device)
+          target_var = target.to(torch_device)
+          minibatch_size = len(target_var)
+          labeled_minibatch_size = target_var.data.ne(NO_LABEL).sum()
+          assert labeled_minibatch_size > 0 # remove to get rid of error in cifar100 w aug
+          model_out = model(input_var)
         
         if verbose and i % 100 == 0:
             LOG.info(
@@ -337,7 +339,7 @@ def copy_all_vars(modelin, modelout, statedict=True):
   modelout.load_state_dict(modelin.state_dict())
 
 
-def train(train_loader, train_loader_len, model, ema_model, actual_ema_model, optimizer, epoch, log):
+def train(train_loader, train_loader_len, model, ema_model, actual_ema_model, optimizer, epoch, log, torch_device):
     global global_step
 
     class_criterion = nn.CrossEntropyLoss(size_average=False, ignore_index=NO_LABEL).cuda()
@@ -362,9 +364,9 @@ def train(train_loader, train_loader_len, model, ema_model, actual_ema_model, op
         adjust_learning_rate(optimizer, epoch, i, train_loader_len)
         meters.update('lr', optimizer.param_groups[0]['lr'])
 
-        input_var = torch.autograd.Variable(input)
-        ema_input_var = torch.autograd.Variable(ema_input, volatile=True)
-        target_var = torch.autograd.Variable(target.cuda(async=True))
+        input_var = input.to(torch_device)
+        ema_input_var = ema_input.to(torch_device)
+        target_var = target.to(torch_device)
 
         minibatch_size = len(target_var)
         labeled_minibatch_size = target_var.data.ne(NO_LABEL).sum()
@@ -374,17 +376,17 @@ def train(train_loader, train_loader_len, model, ema_model, actual_ema_model, op
         ema_model_out = ema_model(ema_input_var)
         model_out = model(input_var)
 
-        if isinstance(model_out, Variable):
-            assert args.logit_distance_cost < 0
-            logit1 = model_out
-            ema_logit = ema_model_out
-        else:
+        if isinstance(model_out, tuple):
             assert len(model_out) == 2
             assert len(ema_model_out) == 2
             logit1, logit2 = model_out
             ema_logit, _ = ema_model_out
+        else:
+            assert args.logit_distance_cost < 0
+            logit1 = model_out
+            ema_logit = ema_model_out
 
-        ema_logit = Variable(ema_logit.detach().data, requires_grad=False)
+        ema_logit = ema_logit.detach()
 
         if args.logit_distance_cost >= 0:
             class_logit, cons_logit = logit1, logit2
@@ -455,7 +457,7 @@ def train(train_loader, train_loader_len, model, ema_model, actual_ema_model, op
             })
 
 
-def validate(eval_loader, model, log, global_step, epoch):
+def validate(eval_loader, model, log, global_step, epoch, torch_device):
     class_criterion = nn.CrossEntropyLoss(size_average=False, ignore_index=NO_LABEL).cuda()
     meters = AverageMeterSet()
     model.eval()
@@ -464,39 +466,40 @@ def validate(eval_loader, model, log, global_step, epoch):
     for i, (input, target) in enumerate(eval_loader):
         meters.update('data_time', time.time() - end)
 
-        input_var = torch.autograd.Variable(input, volatile=True)
-        target_var = torch.autograd.Variable(target.cuda(async=True), volatile=True)
+        with torch.no_grad():
+          input_var = input.to(torch_device)
+          target_var = target.to(target)
 
-        minibatch_size = len(target_var)
-        labeled_minibatch_size = target_var.data.ne(NO_LABEL).sum()
-        assert labeled_minibatch_size > 0
-        meters.update('labeled_minibatch_size', labeled_minibatch_size)
+          minibatch_size = len(target_var)
+          labeled_minibatch_size = target_var.data.ne(NO_LABEL).sum()
+          assert labeled_minibatch_size > 0
+          meters.update('labeled_minibatch_size', labeled_minibatch_size)
 
-        # compute output
-        output1, output2 = model(input_var)
-        softmax1, softmax2 = F.softmax(output1, dim=1), F.softmax(output2, dim=1)
-        class_loss = class_criterion(output1, target_var) / minibatch_size
+          # compute output
+          output1, output2 = model(input_var)
+          softmax1, softmax2 = F.softmax(output1, dim=1), F.softmax(output2, dim=1)
+          class_loss = class_criterion(output1, target_var) / minibatch_size
 
-        # measure accuracy and record loss
-        prec1, prec5 = accuracy(output1.data, target_var.data, topk=(1, 5))
-        meters.update('class_loss', class_loss.data[0], labeled_minibatch_size)
-        meters.update('top1', prec1[0], labeled_minibatch_size)
-        meters.update('error1', 100.0 - prec1[0], labeled_minibatch_size)
-        meters.update('top5', prec5[0], labeled_minibatch_size)
-        meters.update('error5', 100.0 - prec5[0], labeled_minibatch_size)
+          # measure accuracy and record loss
+          prec1, prec5 = accuracy(output1.data, target_var.data, topk=(1, 5))
+          meters.update('class_loss', class_loss.data[0], labeled_minibatch_size)
+          meters.update('top1', prec1[0], labeled_minibatch_size)
+          meters.update('error1', 100.0 - prec1[0], labeled_minibatch_size)
+          meters.update('top5', prec5[0], labeled_minibatch_size)
+          meters.update('error5', 100.0 - prec5[0], labeled_minibatch_size)
 
-        # measure elapsed time
-        meters.update('batch_time', time.time() - end)
-        end = time.time()
-        if i % 10 == 0:
-            LOG.info(
-                'Test: [{0}/{1}]\t'
-                'Time {meters[batch_time]:.3f}\t'
-                'Data {meters[data_time]:.3f}\t'
-                'Class {meters[class_loss]:.4f}\t'
-                'Prec@1 {meters[top1]:.3f}\t'
-                'Prec@5 {meters[top5]:.3f}'.format(
-                    i, len(eval_loader), meters=meters))
+          # measure elapsed time
+          meters.update('batch_time', time.time() - end)
+          end = time.time()
+          if i % 10 == 0:
+              LOG.info(
+                  'Test: [{0}/{1}]\t'
+                  'Time {meters[batch_time]:.3f}\t'
+                  'Data {meters[data_time]:.3f}\t'
+                  'Class {meters[class_loss]:.4f}\t'
+                  'Prec@1 {meters[top1]:.3f}\t'
+                  'Prec@5 {meters[top5]:.3f}'.format(
+                      i, len(eval_loader), meters=meters))
 
     LOG.info(' * Prec@1 {top1.avg:.3f}\tPrec@5 {top5.avg:.3f}'
           .format(top1=meters['top1'], top5=meters['top5']))
