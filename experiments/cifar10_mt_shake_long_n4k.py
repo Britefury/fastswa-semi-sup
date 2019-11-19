@@ -1,6 +1,7 @@
 import sys
 import logging
 import torch
+sys.path.append('.')
 import main
 from mean_teacher.cli import parse_dict_args
 from mean_teacher.run_context import RunContext
