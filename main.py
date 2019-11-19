@@ -416,16 +416,16 @@ def train(train_loader, train_loader_len, model, ema_model, actual_ema_model, op
         meters.update('loss', float(loss))
 
         prec1, prec5 = accuracy(class_logit, target_var, topk=(1, 5))
-        meters.update('top1', float(prec1[0]), labeled_minibatch_size)
-        meters.update('error1', 100. - float(prec1[0]), labeled_minibatch_size)
-        meters.update('top5', float(prec5[0]), labeled_minibatch_size)
-        meters.update('error5', 100. - float(prec5[0]), labeled_minibatch_size)
+        meters.update('top1', float(prec1), labeled_minibatch_size)
+        meters.update('error1', 100. - float(prec1), labeled_minibatch_size)
+        meters.update('top5', float(prec5), labeled_minibatch_size)
+        meters.update('error5', 100. - float(prec5), labeled_minibatch_size)
 
         ema_prec1, ema_prec5 = accuracy(ema_logit, target_var, topk=(1, 5))
-        meters.update('ema_top1', float(ema_prec1[0]), labeled_minibatch_size)
-        meters.update('ema_error1', 100. - float(ema_prec1[0]), labeled_minibatch_size)
-        meters.update('ema_top5', float(ema_prec5[0]), labeled_minibatch_size)
-        meters.update('ema_error5', 100. - float(ema_prec5[0]), labeled_minibatch_size)
+        meters.update('ema_top1', float(ema_prec1), labeled_minibatch_size)
+        meters.update('ema_error1', 100. - float(ema_prec1), labeled_minibatch_size)
+        meters.update('ema_top5', float(ema_prec5), labeled_minibatch_size)
+        meters.update('ema_error5', 100. - float(ema_prec5), labeled_minibatch_size)
 
         # compute gradient and do SGD step
         optimizer.zero_grad()
@@ -483,10 +483,10 @@ def validate(eval_loader, model, log, global_step, epoch, torch_device):
           # measure accuracy and record loss
           prec1, prec5 = accuracy(output1, target_var, topk=(1, 5))
           meters.update('class_loss', float(class_loss), labeled_minibatch_size)
-          meters.update('top1', float(prec1[0]), labeled_minibatch_size)
-          meters.update('error1', 100.0 - float(prec1[0]), labeled_minibatch_size)
-          meters.update('top5', float(prec5[0]), labeled_minibatch_size)
-          meters.update('error5', 100.0 - float(prec5[0]), labeled_minibatch_size)
+          meters.update('top1', float(prec1), labeled_minibatch_size)
+          meters.update('error1', 100.0 - float(prec1), labeled_minibatch_size)
+          meters.update('top5', float(prec5), labeled_minibatch_size)
+          meters.update('error5', 100.0 - float(prec5), labeled_minibatch_size)
 
           # measure elapsed time
           meters.update('batch_time', time.time() - end)
@@ -563,7 +563,7 @@ def get_current_consistency_weight(epoch):
 def accuracy(output, target, topk=(1,)):
     """Computes the precision@k for the specified values of k"""
     maxk = max(topk)
-    labeled_minibatch_size = max(target.ne(NO_LABEL).sum(), 1e-8)
+    labeled_minibatch_size = max(float(target.ne(NO_LABEL).sum()), 1e-8)
 
     _, pred = output.topk(maxk, 1, True, True)
     pred = pred.t()
@@ -571,8 +571,9 @@ def accuracy(output, target, topk=(1,)):
 
     res = []
     for k in topk:
-        correct_k = correct[:k].view(-1).float().sum(0, keepdim=True)
-        res.append(correct_k.mul_(100.0 / labeled_minibatch_size))
+        # correct_k = correct[:k].view(-1).float().sum(0, keepdim=True)
+        correct_k = correct[:k].view(-1).float().sum()
+        res.append(float(correct_k) * 100.0 / labeled_minibatch_size)
     return res
 
 
