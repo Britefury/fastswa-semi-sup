@@ -468,7 +468,7 @@ def validate(eval_loader, model, log, global_step, epoch, torch_device):
 
         with torch.no_grad():
           input_var = input.to(torch_device)
-          target_var = target.to(target)
+          target_var = target.to(torch_device)
 
           minibatch_size = len(target_var)
           labeled_minibatch_size = (target_var != NO_LABEL).sum()
