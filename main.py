@@ -103,7 +103,7 @@ def main(context):
       optimizer.load_state_dict(checkpoint['optimizer'])
       LOG.info("=> loaded checkpoint '{}' (epoch {})".format(args.resume, checkpoint['epoch']))
       LOG.info("Evaluating the resumed model:")
-      validate(eval_loader, model, validation_log, global_step, checkpoint['epoch'])
+      validate(eval_loader, model, validation_log, global_step, checkpoint['epoch'], torch_device)
     else:
       assert args.start_epoch == 0
       save_checkpoint({
@@ -120,9 +120,9 @@ def main(context):
 
     if args.evaluate:
       LOG.info("Evaluating the primary model:")
-      validate(eval_loader, model, validation_log, global_step, args.start_epoch)
+      validate(eval_loader, model, validation_log, global_step, args.start_epoch, torch_device)
       LOG.info("Evaluating the EMA model:")
-      validate(eval_loader, ema_model, ema_validation_log, global_step, args.start_epoch)
+      validate(eval_loader, ema_model, ema_validation_log, global_step, args.start_epoch, torch_device)
       return
 
     for epoch in range(args.start_epoch, args.epochs + args.num_cycles*args.cycle_interval + 1):
@@ -132,7 +132,7 @@ def main(context):
         print("SWA Model Updated!")
         update_batchnorm(swa_model, train_loader, train_loader_len, torch_device)
         LOG.info("Evaluating the SWA model:")
-        swa_prec1 = validate(eval_loader, swa_model, swa_validation_log, global_step, epoch)
+        swa_prec1 = validate(eval_loader, swa_model, swa_validation_log, global_step, epoch, torch_device)
       
       # do the fastSWA updates
       if args.fastswa_frequencies is not None:
@@ -141,7 +141,7 @@ def main(context):
             print("Evaluate fast-swa-{} at epoch {}".format(fastswa_freq, epoch))
             fastswa_opt.update(model)
             update_batchnorm(fastswa_net, train_loader, train_loader_len, torch_device)
-            validate(eval_loader, fastswa_net, fastswa_log, global_step, epoch)
+            validate(eval_loader, fastswa_net, fastswa_log, global_step, epoch, torch_device)
       
       # train for one epoch
       start_time = time.time()
@@ -156,9 +156,9 @@ def main(context):
       if args.evaluation_epochs and (epoch + 1) % args.evaluation_epochs == 0:
         start_time = time.time()
         LOG.info("Evaluating the primary model:")
-        prec1 = validate(eval_loader, model, validation_log, global_step, epoch + 1)
+        prec1 = validate(eval_loader, model, validation_log, global_step, epoch + 1, torch_device)
         LOG.info("Evaluating the EMA model:")
-        ema_prec1 = validate(eval_loader, ema_model, ema_validation_log, global_step, epoch + 1)
+        ema_prec1 = validate(eval_loader, ema_model, ema_validation_log, global_step, epoch + 1, torch_device)
         LOG.info("--- validation in %s seconds ---" % (time.time() - start_time))
         is_best = ema_prec1 > best_prec1
         best_prec1 = max(ema_prec1, best_prec1)
